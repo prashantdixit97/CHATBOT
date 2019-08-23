@@ -1,16 +1,13 @@
-import numpy as np
-import pandas as pd
+
 import itertools
-import random
-import time
-import math
+
 import torch
-from torch.jit import script, trace
+#from torch.jit import script, trace
 import torch.nn.functional as F
 import torch.nn as nn
-import csv
-import codecs
-from torch.autograd import Variable
+#import csv
+#import codecs
+#from torch.autograd import Variable
 from torch import optim
 import re as r
 import unicodedata
@@ -21,8 +18,8 @@ import os
 
 USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda" if USE_CUDA else "cpu")
-corpus_name = "cornell movie-dialogs corpus"
-corpus = os.path.join("data", corpus_name)
+#corpus_name = "cornell movie-dialogs corpus"
+#corpus = os.path.join("data", corpus_name)
 
 # Importing the dataset
 lines = open('movie_lines.txt', encoding = 'utf-8', errors = 'ignore').read().split('\n')
@@ -299,9 +296,8 @@ def train(input_variable, lengths, target_variable, mask, max_target_len, encode
     n_totals = 0
 
     encoder_outputs, encoder_hidden = encoder(input_variable, lengths)
-
     decoder_input = torch.LongTensor([[SOS_token for _ in range(batch_size)]])
-  #  decoder_input = decoder_input.to(device)
+    decoder_input = decoder_input.to(device)
 
     decoder_hidden = encoder_hidden[:decoder.n_layers]
 
@@ -329,10 +325,10 @@ def train(input_variable, lengths, target_variable, mask, max_target_len, encode
 
 
 ##############################################################
-def trainIters(model_name, voc, pairs, encoder, decoder, encoder_optimizer, decoder_optimizer, embedding, encoder_n_layers, decoder_n_layers, save_dir, n_iteration, batch_size, print_every, save_every, clip, corpus_name, loadFilename):
+def trainIters(model_name, voc, pairs, encoder, decoder, encoder_optimizer, decoder_optimizer, embedding, encoder_n_layers, decoder_n_layers, n_iteration, batch_size, print_every,  clip, corpus_name ):
+    #REMOVED SAVE_EVERY ,LOADFILENAME,SAVE_DIR
 
-#    training_batches = [batch2TrainData(voc, [ for  in range(batch_size)])
-  #                    for _ in range(n_iteration)]
+
     a,b,training_batches=[],[],[]
     for _ in range(n_iteration):
         pair=[]
@@ -345,19 +341,16 @@ def trainIters(model_name, voc, pairs, encoder, decoder, encoder_optimizer, deco
         training_batches.append(batch2TrainData(voc,pair))
            
            
-        
-        
     print('Initializing ...')
     start_iteration = 1
     print_loss = 0
-    if loadFilename:
-        start_iteration = checkpoint['iteration'] + 1
+#    if loadFilename:
+#        start_iteration = checkpoint['iteration'] + 1
 
     print("Training...")
     for iteration in range(start_iteration, n_iteration + 1):
         training_batch = training_batches[iteration - 1]
         input_variable, lengths, target_variable, mask, max_target_len = training_batch
-
         loss = train(input_variable, lengths, target_variable, mask, max_target_len, encoder,
                      decoder, embedding, encoder_optimizer, decoder_optimizer, batch_size, clip)
         print_loss += loss
@@ -367,20 +360,7 @@ def trainIters(model_name, voc, pairs, encoder, decoder, encoder_optimizer, deco
             print("Iteration: {}; Percent complete: {:.1f}%; Average loss: {:.4f}".format(iteration, iteration / n_iteration * 100, print_loss_avg))
             print_loss = 0
 
-        if (iteration % save_every == 0):
-            directory = os.path.join(save_dir, model_name, corpus_name, '{}-{}_{}'.format(encoder_n_layers, decoder_n_layers, hidden_size))
-            if not os.path.exists(directory):
-                os.mkdirs(directory)
-                torch.save({
-                'iteration': iteration,
-                'en': encoder.state_dict(),
-                'de': decoder.state_dict(),
-                'en_opt': encoder_optimizer.state_dict(),
-                'de_opt': decoder_optimizer.state_dict(),
-                'loss': loss,
-                'voc_dict': voc.__dict__,
-                'embedding': embedding.state_dict()
-            }, os.path.join(directory, '{}_{}.tar'.format(iteration, 'checkpoint')))
+
     
     
 ######################################################################
@@ -405,10 +385,6 @@ class GreedySearchDecoder(nn.Module):
         return all_tokens, all_scores    
     
  ####################################################
-
-
-
-
 def evaluate(encoder, decoder, searcher, wp, sentence, max_length=MAX_LENGTH):
     indexes_batch = [sent2index(wp, sentence)]
     lengths = torch.tensor([len(indexes) for indexes in indexes_batch])
@@ -420,6 +396,7 @@ def evaluate(encoder, decoder, searcher, wp, sentence, max_length=MAX_LENGTH):
     # indexes -> words
     decoded_words = [wp.index2word[token.item()] for token in tokens]
     return decoded_words
+
 
 
 def evaluateInput(encoder, decoder, searcher, voc):
@@ -445,11 +422,11 @@ def evaluateInput(encoder, decoder, searcher, voc):
 
 model_name = 'cb_model'
 attn_model='dot'
-hidden_size = 500
-encoder_n_layers = 2
-decoder_n_layers = 2
+hidden_size = 512
+encoder_n_layers = 3
+decoder_n_layers = 3
 dropout = 0.1
-batch_size = 64
+batch_size = 32
 
 # Set checkpoint to load from; set to None if starting from scratch
 loadFilename = None
@@ -460,36 +437,43 @@ checkpoint_iter = 4000
 
 
 # Load model if a loadFilename is provided
-if loadFilename:
+#if loadFilename:
     # If loading on same machine the model was trained on
-    checkpoint = torch.load(loadFilename)
+#    checkpoint = torch.load(loadFilename)
     # If loading a model trained on GPU to CPU
     #checkpoint = torch.load(loadFilename, map_location=torch.device('cpu'))
-    encoder_sd = checkpoint['en']
-    decoder_sd = checkpoint['de']
-    encoder_optimizer_sd = checkpoint['en_opt']
-    decoder_optimizer_sd = checkpoint['de_opt']
-    embedding_sd = checkpoint['embedding']
-    wp.__dict__ = checkpoint['voc_dict']
+#    encoder_sd = checkpoint['en']
+#    decoder_sd = checkpoint['de']
+#    encoder_optimizer_sd = checkpoint['en_opt']
+#    decoder_optimizer_sd = checkpoint['de_opt']
+#    embedding_sd = checkpoint['embedding']
+#    wp.__dict__ = checkpoint['voc_dict']
 
 
 print('Building encoder and decoder ...')
 # Initialize word embeddings
 embedding = nn.Embedding(wp.num_words, hidden_size)
-if loadFilename:
-    embedding.load_state_dict(embedding_sd)
+#if loadFilename:
+#    embedding.load_state_dict(embedding_sd)
 # Initialize encoder & decoder models
 encoder = Encoder(hidden_size, embedding, encoder_n_layers, dropout)
 decoder = LuongAttnDecoderRNN(attn_model, embedding, hidden_size, wp.num_words, decoder_n_layers, dropout)
-if loadFilename:
-    encoder.load_state_dict(encoder_sd)
-    decoder.load_state_dict(decoder_sd)
+#if loadFilename:
+#    encoder.load_state_dict(encoder_sd)
+#   decoder.load_state_dict(decoder_sd)
 # Use appropriate device
 encoder = encoder.to(device)
 decoder = decoder.to(device)
 print('Models built and ready to go!')
 
+
+
+
+
 #############################################################################
+
+
+
 
 # Configure training/optimization
 
@@ -499,7 +483,7 @@ learning_rate = 0.0001
 decoder_learning_ratio = 5.0
 n_iteration = 4000
 print_every = 1
-save_every = 500
+#save_every = 500
 
 # Ensure dropout layers are in train mode
 encoder.train()
@@ -509,9 +493,9 @@ decoder.train()
 print('Building optimizers ...')
 encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate)
 decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate * decoder_learning_ratio)
-if loadFilename:
-    encoder_optimizer.load_state_dict(encoder_optimizer_sd)
-    decoder_optimizer.load_state_dict(decoder_optimizer_sd)
+#if loadFilename:
+#    encoder_optimizer.load_state_dict(encoder_optimizer_sd)
+#    decoder_optimizer.load_state_dict(decoder_optimizer_sd)
 
 # If you have cuda, configure cuda to call
 for state in encoder_optimizer.state.values():
@@ -528,9 +512,9 @@ for state in decoder_optimizer.state.values():
 corpus_name="cornell-corpus"
 print("Starting Training!")
 trainIters(model_name, wp, pairs, encoder, decoder, encoder_optimizer, decoder_optimizer,
-           embedding, encoder_n_layers, decoder_n_layers,save_dir, n_iteration, batch_size,
-           print_every, save_every, clip,corpus_name, loadFilename)
-
+           embedding, encoder_n_layers, decoder_n_layers, n_iteration, batch_size,
+           print_every, clip,corpus_name)
+# REMOVED LOADfILENAME,SAVE_DIR
 
 
 
