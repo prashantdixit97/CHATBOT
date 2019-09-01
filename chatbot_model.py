@@ -1,13 +1,8 @@
 
 import itertools
-
 import torch
-#from torch.jit import script, trace
 import torch.nn.functional as F
 import torch.nn as nn
-#import csv
-#import codecs
-#from torch.autograd import Variable
 from torch import optim
 import re as r
 import unicodedata
@@ -24,7 +19,7 @@ device = torch.device("cuda" if USE_CUDA else "cpu")
 # Importing the dataset
 lines = open('movie_lines.txt', encoding = 'utf-8', errors = 'ignore').read().split('\n')
 conversations = open('movie_conversations.txt', encoding = 'utf-8', errors = 'ignore').read().split('\n')
-save_dir = os.path.join("data","save")
+save_dir = os.path.join("save")
 # Creating a dictionary that maps each line and its id
 id2line = {}
 for l in lines:
@@ -145,7 +140,7 @@ def sentence_selector(wp,que,ans,min_count):
                 break
 
         
-        for k1 in que[k].split(" "):
+        for k1 in ans[k].split(" "):
             if k1 not in wp.word2index:
                 flag1=False
                 break
@@ -157,7 +152,8 @@ def sentence_selector(wp,que,ans,min_count):
     pairs.append(ans1)
     return pairs
 pairs=sentence_selector(wp,que,ans,min_count)
-#############################################################################
+##########################################################################################################################################
+
 
 def sent2index(wp,sent):
     return [wp.word2index[w] for w in sent.split(" ")] + [EOS_token]
@@ -176,6 +172,7 @@ def binaryMatrix(l, value=0):
                 m[i].append(1)
     return m
 
+
 def inputVar(l, wp):
     indexes_batch = [sent2index(wp, sent) for sent in l]
     lengths = torch.tensor([len(indexes) for indexes in indexes_batch])
@@ -192,6 +189,7 @@ def outputVar(l, wp):
     padVar = torch.LongTensor(padList)
     return padVar , mask ,max_target_len
 
+
 def batch2TrainData(wp,pairs):
     input_batch,output_batch = pairs[0],pairs[1]
     inp,lengths = inputVar(input_batch,wp)
@@ -200,6 +198,11 @@ def batch2TrainData(wp,pairs):
 
 
 
+count_words=wp.num_words
+len_dic=len(wp.word2index)
+print("length of dictionary:  ",len_dic)
+#wp.word2index['eber']=27949
+#wp.word2index['blowdryer']=27950
 
 ###########################################################    DEFINING   MODEL
 
@@ -212,17 +215,18 @@ class Encoder(nn.Module):
         self.embedding = embedding
         
         self.gru = nn.GRU(hidden_size,hidden_size,n_layers,dropout=(0 if n_layers==1 else dropout ),bidirectional=True)
-        
-        
-    def froward(self,input_seq,input_lens,hidden=None):
+                
+    def forward(self,input_seq,input_lens,hidden=None):
         embedded = self.embedding(input_seq)
-        packed = torch.nn.utils.rnn.pack_sequence(embedded,input_lens)
+        packed = torch.nn.utils.rnn.pack_padded_sequence(embedded,input_lens,enforce_sorted=False)
         outputs, hidden = self.gru(packed,hidden)
         
-        outputs,_ = torch.utils.rnn.pad_packed_sequence(outputs)
+        outputs,_ =  nn.utils.rnn.pad_packed_sequence(outputs)
         
-        outputs = outputs[:,:,:self.hidden_size] + outputs[:,:,self.hidden_size:]
+        outputs = outputs[:,:,:self.hidden_size] + outputs[:, : ,self.hidden_size:]
         return outputs,hidden
+
+
 
 
     
@@ -238,6 +242,8 @@ class Attn(nn.Module):
         return F.softmax(attn_energies, dim=1).unsqueeze(1)    
   
     
+
+
     
 class LuongAttnDecoderRNN(nn.Module):
     def __init__(self, attn_model, embedding, hidden_size, output_size, n_layers=1, dropout=0.1):
@@ -250,7 +256,7 @@ class LuongAttnDecoderRNN(nn.Module):
         self.embedding = embedding
         self.embedding_dropout = nn.Dropout(dropout)
         self.gru = nn.GRU(hidden_size, hidden_size, n_layers, dropout=(0 if n_layers == 1 else dropout))
-        self.concat = nn.Linear(hidden_size * 2, hidden_size)
+        self.concat = nn.Linear(hidden_size*2 , hidden_size)
         self.out = nn.Linear(hidden_size, output_size)
 
         self.attn = Attn( hidden_size)
@@ -269,7 +275,9 @@ class LuongAttnDecoderRNN(nn.Module):
         output = F.softmax(output, dim=1)
         return output, hidden    
 
-###############################################
+
+
+#####################################################################################################################################
 
 def maskNLLLoss(inp, target, mask):
     nTotal = mask.sum()
@@ -278,7 +286,7 @@ def maskNLLLoss(inp, target, mask):
     loss = loss.to(device)
     return loss, nTotal.item()    
  
-###############################################    
+###############################################    ########################################################################################
 
 def train(input_variable, lengths, target_variable, mask, max_target_len, encoder, decoder, embedding,
           encoder_optimizer, decoder_optimizer, batch_size, clip, max_length=MAX_LENGTH):
@@ -294,8 +302,9 @@ def train(input_variable, lengths, target_variable, mask, max_target_len, encode
     loss = 0
     print_losses = []
     n_totals = 0
-
+    print("s1")
     encoder_outputs, encoder_hidden = encoder(input_variable, lengths)
+    print("s2")
     decoder_input = torch.LongTensor([[SOS_token for _ in range(batch_size)]])
     decoder_input = decoder_input.to(device)
 
@@ -325,34 +334,30 @@ def train(input_variable, lengths, target_variable, mask, max_target_len, encode
 
 
 ##############################################################
-def trainIters(model_name, voc, pairs, encoder, decoder, encoder_optimizer, decoder_optimizer, embedding, encoder_n_layers, decoder_n_layers, n_iteration, batch_size, print_every,  clip, corpus_name ):
-    #REMOVED SAVE_EVERY ,LOADFILENAME,SAVE_DIR
-
+def trainIters(model_name, wp, pairs, encoder, decoder, encoder_optimizer, decoder_optimizer, embedding, encoder_n_layers, decoder_n_layers, save_dir, n_iteration, batch_size, print_every, save_every, clip, corpus_name, loadFilename ):
 
     a,b,training_batches=[],[],[]
     for _ in range(n_iteration):
         pair=[]
-        for i in range(batch_size):
-            
+        for i in range(batch_size):            
             a.append(pairs[0][i])
             b.append(pairs[1][i])
-            pair.append(a)
+        pair.append(a)
         pair.append(b)
-        training_batches.append(batch2TrainData(voc,pair))
-           
+        training_batches.append(batch2TrainData(wp,pair))
+       
            
     print('Initializing ...')
     start_iteration = 1
     print_loss = 0
-#    if loadFilename:
-#        start_iteration = checkpoint['iteration'] + 1
+    if loadFilename:
+        start_iteration = checkpoint['iteration'] + 1
 
     print("Training...")
     for iteration in range(start_iteration, n_iteration + 1):
         training_batch = training_batches[iteration - 1]
         input_variable, lengths, target_variable, mask, max_target_len = training_batch
-        loss = train(input_variable, lengths, target_variable, mask, max_target_len, encoder,
-                     decoder, embedding, encoder_optimizer, decoder_optimizer, batch_size, clip)
+        loss = train(input_variable, lengths, target_variable, mask, max_target_len, encoder,decoder, embedding, encoder_optimizer, decoder_optimizer, batch_size, clip)
         print_loss += loss
 
         if iteration % print_every == 0:
@@ -360,7 +365,20 @@ def trainIters(model_name, voc, pairs, encoder, decoder, encoder_optimizer, deco
             print("Iteration: {}; Percent complete: {:.1f}%; Average loss: {:.4f}".format(iteration, iteration / n_iteration * 100, print_loss_avg))
             print_loss = 0
 
-
+        if (iteration % save_every == 0):
+             directory = os.path.join(save_dir, '{}-{}_{}'.format(encoder_n_layers, decoder_n_layers, hidden_size))
+             if not os.path.exists(directory):
+                os.mkdirs(directory)
+                torch.save({
+                'iteration': iteration,
+                'en': encoder.state_dict(),
+                'de': decoder.state_dict(),
+                'en_opt': encoder_optimizer.state_dict(),
+                'de_opt': decoder_optimizer.state_dict(),
+                'loss': loss,
+                'voc_dict': wp.__dict__,
+                'embedding': embedding.state_dict()
+            }, os.path.join(directory, '{}_{}.tar'.format(iteration, 'checkpoint')))
     
     
 ######################################################################
@@ -399,14 +417,14 @@ def evaluate(encoder, decoder, searcher, wp, sentence, max_length=MAX_LENGTH):
 
 
 
-def evaluateInput(encoder, decoder, searcher, voc):
+def evaluateInput(encoder, decoder, searcher, wp):
     input_sentence = ''
     while(1):
         try:
             input_sentence = input('> ')
             if input_sentence == 'q' or input_sentence == 'quit': break
             input_sentence = p_process_string(input_sentence)
-            output_words = evaluate(encoder, decoder, searcher, voc, input_sentence)
+            output_words = evaluate(encoder, decoder, searcher, wp, input_sentence)
             output_words[:] = [x for x in output_words if not (x == 'EOS' or x == 'PAD')]
             print('Bot:', ' '.join(output_words))
 
@@ -422,11 +440,11 @@ def evaluateInput(encoder, decoder, searcher, voc):
 
 model_name = 'cb_model'
 attn_model='dot'
-hidden_size = 512
-encoder_n_layers = 3
-decoder_n_layers = 3
+hidden_size = 128
+encoder_n_layers = 2
+decoder_n_layers = 2
 dropout = 0.1
-batch_size = 32
+batch_size = 128
 
 # Set checkpoint to load from; set to None if starting from scratch
 loadFilename = None
@@ -437,30 +455,32 @@ checkpoint_iter = 4000
 
 
 # Load model if a loadFilename is provided
-#if loadFilename:
+if loadFilename:
     # If loading on same machine the model was trained on
-#    checkpoint = torch.load(loadFilename)
+    checkpoint = torch.load(loadFilename)
     # If loading a model trained on GPU to CPU
     #checkpoint = torch.load(loadFilename, map_location=torch.device('cpu'))
-#    encoder_sd = checkpoint['en']
-#    decoder_sd = checkpoint['de']
-#    encoder_optimizer_sd = checkpoint['en_opt']
-#    decoder_optimizer_sd = checkpoint['de_opt']
-#    embedding_sd = checkpoint['embedding']
-#    wp.__dict__ = checkpoint['voc_dict']
+    encoder_sd = checkpoint['en']
+    decoder_sd = checkpoint['de']
+    encoder_optimizer_sd = checkpoint['en_opt']
+    decoder_optimizer_sd = checkpoint['de_opt']
+    embedding_sd = checkpoint['embedding']
+    wp.__dict__ = checkpoint['voc_dict']
 
 
 print('Building encoder and decoder ...')
 # Initialize word embeddings
 embedding = nn.Embedding(wp.num_words, hidden_size)
-#if loadFilename:
-#    embedding.load_state_dict(embedding_sd)
+if loadFilename:
+    embedding.load_state_dict(embedding_sd)
+
 # Initialize encoder & decoder models
+
 encoder = Encoder(hidden_size, embedding, encoder_n_layers, dropout)
 decoder = LuongAttnDecoderRNN(attn_model, embedding, hidden_size, wp.num_words, decoder_n_layers, dropout)
-#if loadFilename:
-#    encoder.load_state_dict(encoder_sd)
-#   decoder.load_state_dict(decoder_sd)
+if loadFilename:
+    encoder.load_state_dict(encoder_sd)
+    decoder.load_state_dict(decoder_sd)
 # Use appropriate device
 encoder = encoder.to(device)
 decoder = decoder.to(device)
@@ -479,11 +499,11 @@ print('Models built and ready to go!')
 
 clip = 50.0
 teacher_forcing_ratio = 1.0
-learning_rate = 0.0001
+learning_rate = 0.01
 decoder_learning_ratio = 5.0
-n_iteration = 4000
+n_iteration = 8
 print_every = 1
-#save_every = 500
+save_every = 500
 
 # Ensure dropout layers are in train mode
 encoder.train()
@@ -493,9 +513,9 @@ decoder.train()
 print('Building optimizers ...')
 encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate)
 decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate * decoder_learning_ratio)
-#if loadFilename:
-#    encoder_optimizer.load_state_dict(encoder_optimizer_sd)
-#    decoder_optimizer.load_state_dict(decoder_optimizer_sd)
+if loadFilename:
+    encoder_optimizer.load_state_dict(encoder_optimizer_sd)
+    decoder_optimizer.load_state_dict(decoder_optimizer_sd)
 
 # If you have cuda, configure cuda to call
 for state in encoder_optimizer.state.values():
@@ -508,13 +528,15 @@ for state in decoder_optimizer.state.values():
         if isinstance(v, torch.Tensor):
             state[k] = v.cuda()
 
+
 # Run training iterations
-corpus_name="cornell-corpus"
+corpus_name="cornell-corpus" 
 print("Starting Training!")
 trainIters(model_name, wp, pairs, encoder, decoder, encoder_optimizer, decoder_optimizer,
-           embedding, encoder_n_layers, decoder_n_layers, n_iteration, batch_size,
-           print_every, clip,corpus_name)
-# REMOVED LOADfILENAME,SAVE_DIR
+           embedding, encoder_n_layers, decoder_n_layers, save_dir, n_iteration, batch_size,
+           print_every, save_every, clip, corpus_name, loadFilename)
+print("training stop")
+
 
 
 
@@ -534,7 +556,7 @@ searcher = GreedySearchDecoder(encoder, decoder)
 #evaluateInput(encoder, decoder, searcher, wp)
 
 
-
+#problem of eber key in word2index
 
 
 
